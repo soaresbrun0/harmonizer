@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'>
+    <link rel='stylesheet' href='/portal.css'>
+    <script>
+        function togglePassword() {
+            var input = document.getElementById('password');
+            var btn = document.getElementById('password_toggle_btn');
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.textContent = 'Hide';
+            } else {
+                input.type = 'password';
+                btn.textContent = 'Show';
+            }
+        }
+
+        function ssidChanged() {
+            document.getElementById('password').value = "";
+            checkNetworkSelection();
+        }
+
+        function validateNetwork() {
+            var ok = true;
+            if (document.getElementById('interface').value === 'wifi') {
+                var dropdown = document.getElementById("wifi_select");
+                var ssid = dropdown.value === "other"
+                    ? document.getElementById("ssid_custom").value.trim()
+                    : dropdown.value;
+                ok = ssid.length > 0;
+            }
+            document.getElementById('network_next').disabled = !ok;
+        }
+
+        function checkNetworkSelection() {
+            var dropdown = document.getElementById("wifi_select");
+            var customDiv = document.getElementById("custom_ssid_div");
+            var customInput = document.getElementById("ssid_custom");
+
+            if (dropdown.value === "other") {
+                customDiv.classList.remove("hidden");
+                customInput.required = true;
+                dropdown.name = "";
+                customInput.name = "ssid";
+            } else {
+                customDiv.classList.add("hidden");
+                customInput.required = false;
+                dropdown.name = "ssid";
+                customInput.name = "";
+            }
+            validateNetwork();
+        }
+
+        function toggleInterface() {
+            var interfaceSelect = document.getElementById("interface");
+            var wifiSection = document.getElementById("wifi_section");
+            var wifiSelect = document.getElementById("wifi_select");
+            var customInput = document.getElementById("ssid_custom");
+
+            if (interfaceSelect.value === "ethernet") {
+                wifiSection.classList.add("hidden");
+                wifiSelect.required = false;
+                customInput.required = false;
+            } else {
+                wifiSection.classList.remove("hidden");
+                checkNetworkSelection();
+            }
+            validateNetwork();
+        }
+
+        function scanNetworks() {
+            var btn = document.getElementById("scan_btn");
+            var statusText = document.getElementById("status_text");
+
+            btn.disabled = true;
+            statusText.innerHTML = "Scanning networks... <div class='spinner'></div>";
+
+            fetch('/scan')
+                .then(response => response.json())
+                .then(networks => {
+                    var dropdown = document.getElementById("wifi_select");
+                    dropdown.innerHTML = "";
+
+                    if (networks.length === 0) {
+                        dropdown.innerHTML += "<option value=''>No networks found</option>";
+                    } else {
+                        networks.forEach(network => {
+                            dropdown.innerHTML += "<option value='" + network.ssid + "'>" + network.ssid + " (Ch " + network.channel + ", " + network.rssi + " dBm)</option>";
+                        });
+                    }
+                    dropdown.innerHTML += "<option value='other'>[Other / Hidden SSID]</option>";
+
+                    statusText.innerHTML = "Scan complete!";
+                    btn.disabled = false;
+                    if (savedSsid) {
+                        selectSsid(savedSsid);
+                    } else {
+                        checkNetworkSelection();
+                    }
+                })
+                .catch(err => {
+                    statusText.innerHTML = "<span style='color:red;'>Scan timed out. Try again.</span>";
+                    btn.disabled = false;
+                });
+        }
+
+        var savedSsid = "";
+
+        function setBadge(id, ready) {
+            var el = document.getElementById(id);
+            el.textContent = ready ? 'Done' : 'Pending';
+            el.className = ready ? 'done' : 'pending';
+        }
+
+        function selectSsid(ssid) {
+            var dropdown = document.getElementById("wifi_select");
+            for (var i = 0; i < dropdown.options.length; i++) {
+                if (dropdown.options[i].value === ssid) {
+                    dropdown.selectedIndex = i;
+                    checkNetworkSelection();
+                    return;
+                }
+            }
+            dropdown.value = "other";
+            document.getElementById("ssid_custom").value = ssid;
+            checkNetworkSelection();
+        }
+
+        function refreshOverview() {
+            fetch('/overview')
+                .then(response => response.json())
+                .then(o => {
+                    document.getElementById('current').textContent = o.network.label;
+                    setBadge('nav-network', o.networkReady);
+                    setBadge('nav-smart-hub', o.smartHubReady);
+                    if (!o.network.valid) {
+                        scanNetworks();
+                        return;
+                    }
+                    document.getElementById('interface').value = o.network.interface;
+                    toggleInterface();
+                    if (o.network.interface === 'wifi') {
+                        savedSsid = o.network.ssid;
+                        selectSsid(o.network.ssid);
+                        document.getElementById('password').value = o.network.password;
+                    }
+                })
+                .catch(err => { scanNetworks(); });
+        }
+
+        function attachOverlay() {
+            document.querySelectorAll('form').forEach(function(f) {
+                f.addEventListener('submit', function() {
+                    document.getElementById('page-overlay').classList.remove('hidden');
+                });
+            });
+            // Browser Back restores the submitted page from cache with the
+            // overlay still visible; hide it whenever the page is shown.
+            window.addEventListener('pageshow', function() {
+                document.getElementById('page-overlay').classList.add('hidden');
+            });
+        }
+
+        window.onload = function() { refreshOverview(); attachOverlay(); };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div id="page-overlay" class="overlay hidden"><div class="spinner"></div></div>
+        <h2>Step 1 - Network</h2>
+        <div class='steps'>
+            <a href='/network' class='active'>1. Network <span id='nav-network' class='pending'>...</span></a>
+            <a href='/smart-hub'>2. Smart Hub <span id='nav-smart-hub' class='pending'>...</span></a>
+            <a href='/review'>3. Review</a>
+        </div>
+        <p class='kv' id='current'>Loading...</p>
+        <form action='/network/save' method='POST'>
+            <label for='interface'>Connection Interface:</label>
+            <select id='interface' name='interface' onchange='toggleInterface()'>
+                <option value='ethernet'>Ethernet</option>
+                <option value='wifi' selected>Wi-Fi</option>
+            </select>
+
+            <div id="wifi_section">
+                <label for='wifi_select'>Wi-Fi Network:</label>
+                <div class="scan-row">
+                    <select id='wifi_select' name='ssid' onchange='ssidChanged()'>
+                        <option value='other'>[Other / Hidden SSID]</option>
+                    </select>
+                    <button type="button" id="scan_btn" class="btn" onclick="scanNetworks()">Scan</button>
+                </div>
+                <div id="status_text" class="status-container"></div>
+
+                <div id='custom_ssid_div' class='hidden'>
+                    <label for='ssid_custom'>Enter Wi-Fi Name (SSID):</label>
+                    <input type='text' id='ssid_custom' name='' placeholder='Type network name' oninput='validateNetwork()'>
+                </div>
+
+                <label for='password'>Password (optional):</label>
+                <div class="scan-row">
+                    <input type='password' id='password' name='password' placeholder='Enter network password'>
+                    <button type="button" id="password_toggle_btn" class="btn" onclick="togglePassword()">Show</button>
+                </div>
+            </div>
+
+            <input type='submit' id='network_next' value='Next' disabled>
+        </form>
+
+    </div>
+</body>
+</html>

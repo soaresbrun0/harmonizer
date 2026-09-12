@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'>
+    <link rel='stylesheet' href='/portal.css'>
+    <script>
+        var prefilled = false;
+
+        function refreshStatus() {
+            fetch('/smart-hub/status')
+                .then(response => response.json())
+                .then(s => {
+                    document.getElementById('radio_state').textContent = s.state;
+                    var hint = document.getElementById('scan_hint');
+                    var channel = document.getElementById('channel');
+                    var address = document.getElementById('address');
+                    if (s.pending.present) {
+                        hint.textContent = 'Found Smart Hub on channel ' + s.pending.channel + ', address ' + s.pending.address;
+                        if (!prefilled) {
+                            channel.value = s.pending.channel;
+                            address.value = s.pending.address;
+                            prefilled = true;
+                        }
+                    } else if (s.scanning) {
+                        hint.textContent = 'Power on the Smart Hub and press the pair/reset button on its back.';
+                    } else {
+                        hint.textContent = 'Tap "Start Scan" to discover your Smart Hub or "Enter Manually" if you already have its channel and address.';
+                        if (!prefilled && s.saved.valid) {
+                            channel.value = s.saved.channel;
+                            address.value = s.saved.address;
+                            prefilled = true;
+                        }
+                    }
+                    var scanBtn = document.getElementById('scan_toggle_btn');
+                    scanBtn.textContent = s.scanning ? 'Stop Scan' : 'Start Scan';
+                    scanBtn.dataset.scanning = s.scanning ? "1" : "";
+                    validateSmartHub();
+                    var navSmartHub = document.getElementById('nav-smart-hub');
+                    navSmartHub.textContent = s.smartHubReady ? 'Done' : 'Pending';
+                    navSmartHub.className = s.smartHubReady ? 'done' : 'pending';
+                })
+                .catch(err => {});
+        }
+
+        function enterManual() {
+            document.getElementById('channel').readOnly = false;
+            document.getElementById('address').readOnly = false;
+            document.getElementById('enter_manual_btn').classList.add('hidden');
+        }
+
+        function validateSmartHub() {
+            var ok = document.getElementById('channel').value.trim().length > 0
+                && document.getElementById('address').value.trim().length > 0;
+            document.getElementById('smart_hub_next').disabled = !ok;
+        }
+
+        function scanToggle() {
+            var btn = document.getElementById('scan_toggle_btn');
+            if (btn.dataset.scanning === "1") {
+                scanStop();
+            } else {
+                scanStart();
+            }
+        }
+
+        function attachOverlay() {
+            document.querySelectorAll('form').forEach(function(f) {
+                f.addEventListener('submit', function() {
+                    document.getElementById('page-overlay').classList.remove('hidden');
+                });
+            });
+            // Browser Back restores the submitted page from cache with the
+            // overlay still visible; hide it whenever the page is shown.
+            window.addEventListener('pageshow', function() {
+                document.getElementById('page-overlay').classList.add('hidden');
+            });
+        }
+
+        function refreshNav() {
+            fetch('/overview')
+                .then(response => response.json())
+                .then(o => {
+                    var navNetwork = document.getElementById('nav-network');
+                    navNetwork.textContent = o.networkReady ? 'Done' : 'Pending';
+                    navNetwork.className = o.networkReady ? 'done' : 'pending';
+                })
+                .catch(err => {});
+        }
+
+        function scanStart() {
+            var statusText = document.getElementById('scan_hint');
+            statusText.innerHTML = "Starting scan... <div class='spinner'></div>";
+            fetch('/smart-hub/scan/start', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    prefilled = false;
+                    if (data.started) {
+                        document.getElementById('channel').value = '';
+                        document.getElementById('address').value = '';
+                    }
+                    statusText.textContent = data.started ? 'Scanning for Smart Hub...' : 'Scan not started: ' + data.reason;
+                    refreshStatus();
+                })
+                .catch(err => { statusText.textContent = 'Scan request failed.'; });
+        }
+
+        function scanStop() {
+            fetch('/smart-hub/scan/stop', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('scan_hint').textContent = data.stopped ? 'Scan stopped.' : 'Not scanning.';
+                    refreshStatus();
+                })
+                .catch(err => {});
+        }
+
+        setInterval(refreshStatus, 2000);
+        window.onload = function() { refreshStatus(); refreshNav(); attachOverlay(); };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div id="page-overlay" class="overlay hidden"><div class="spinner"></div></div>
+        <h2>Step 2 - Smart Hub</h2>
+        <div class='steps'>
+            <a href='/network'>1. Network <span id='nav-network' class='pending'>...</span></a>
+            <a href='/smart-hub' class='active'>2. Smart Hub <span id='nav-smart-hub' class='pending'>...</span></a>
+            <a href='/review'>3. Review</a>
+        </div>
+        <p class='kv'>Radio: <b id='radio_state'>...</b></p>
+        <p class='note' id='scan_hint'>...</p>
+        <div class="scan-row">
+            <button type="button" id="scan_toggle_btn" class="btn" onclick="scanToggle()">Start Scan</button>
+            <button type="button" id="enter_manual_btn" class="btn" onclick="enterManual()">Enter Manually</button>
+        </div>
+        <form action='/smart-hub/save' method='POST'>
+            <label for='channel'>Channel:</label>
+            <input type='text' id='channel' name='channel' placeholder='e.g. 5' autocomplete='off' inputmode='numeric' oninput='validateSmartHub()' readonly>
+            <label for='address'>Address:</label>
+            <input type='text' id='address' name='address' placeholder='e.g. 0xA1B2C3D405' autocomplete='off' autocapitalize='off' spellcheck='false' oninput='validateSmartHub()' readonly>
+            <input type='submit' id='smart_hub_next' value='Next' disabled>
+        </form>
+
+    </div>
+</body>
+</html>

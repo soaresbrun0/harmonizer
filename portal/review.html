@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'>
+    <link rel='stylesheet' href='/portal.css'>
+    <script>
+        function setBadge(id, ready) {
+            var el = document.getElementById(id);
+            el.textContent = ready ? 'Done' : 'Pending';
+            el.className = ready ? 'done' : 'pending';
+        }
+        function refreshOverview() {
+            fetch('/overview')
+                .then(response => response.json())
+                .then(o => {
+                    setBadge('nav-network', o.networkReady);
+                    setBadge('nav-smart-hub', o.smartHubReady);
+                    document.getElementById('network-status').textContent = !o.network.valid
+                        ? 'Not configured'
+                        : (o.network.interface === 'wifi' ? 'Wi-Fi: ' + o.network.ssid : 'Ethernet');
+                    document.getElementById('smart-hub-status').textContent = !o.smartHub.valid
+                        ? 'Not configured'
+                        : 'Channel ' + o.smartHub.channel + ', Address ' + o.smartHub.address;
+                    document.getElementById('reboot-btn').disabled = !o.canReboot;
+                    document.getElementById('reboot-btn').value = o.rebootRequired ? 'Apply & Reboot' : 'Apply';
+                    document.getElementById('reboot-note').textContent = o.canReboot
+                        ? ''
+                        : 'Complete all steps above to enable Apply. A reboot happens only if the Network config changed.';
+                })
+                .catch(err => {});
+        }
+        function attachOverlay() {
+            document.querySelectorAll('form').forEach(function(f) {
+                f.addEventListener('submit', function() {
+                    document.getElementById('page-overlay').classList.remove('hidden');
+                });
+            });
+            // Browser Back restores the submitted page from cache with the
+            // overlay still visible; hide it whenever the page is shown.
+            window.addEventListener('pageshow', function() {
+                document.getElementById('page-overlay').classList.add('hidden');
+            });
+        }
+        function refreshPressed() {
+            fetch('/smart-hub/events')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('pressed-buttons').textContent = data.pressed.join(' + ');
+                })
+                .catch(err => {});
+        }
+
+        window.onload = function() {
+            refreshOverview();
+            fetch('/smart-hub/listen', { method: 'POST' }).catch(err => {});
+            refreshPressed();
+            setInterval(refreshPressed, 250);
+            attachOverlay();
+        };
+    </script>
+</head>
+<body>
+    <div class='container'>
+        <div id="page-overlay" class="overlay hidden"><div class="spinner"></div></div>
+        <h2>Step 3 - Review</h2>
+        <div class='steps'>
+            <a href='/network'>1. Network <span id='nav-network' class='pending'>...</span></a>
+            <a href='/smart-hub'>2. Smart Hub <span id='nav-smart-hub' class='pending'>...</span></a>
+            <a href='/review' class='active'>3. Review</a>
+        </div>
+        <p class='section-label'>Network:</p>
+        <p class='kv' id='network-status'>Loading...</p>
+        <p class='section-label'>Emulated Smart Hub:</p>
+        <p class='kv' id='smart-hub-status'>Loading...</p>
+        <p class='section-label'>Test Remote:</p>
+        <p class='note'>To confirm the Smart Hub emulation works, press any buttons on the Companion remote.</p>
+        <div id='pressed-buttons'></div>
+        <p class='note' id='reboot-note'></p>
+        <form action='/apply' method='POST'><input type='submit' id='reboot-btn' value='Apply' disabled></form>
+    </div>
+</body>
+</html>
