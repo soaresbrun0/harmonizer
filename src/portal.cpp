@@ -5,6 +5,7 @@
 #include <WiFi.h>
 
 #include "config/smart_hub.h"
+#include "config/mqtt.h"
 #include "config/network.h"
 #include "defaults.h"
 #include "defaults.h"
@@ -29,6 +30,7 @@ static bool networkReady = false;
 // network change needs a reboot; smart-hub changes apply live.
 static bool networkChanged = false;
 static bool smartHubReady = false;
+static bool mqttReady = false;
 
 // Most recently discovered (scanning) endpoint. Saved to NVS only via
 // POST /smart-hub/save so the user can review before committing.
@@ -69,6 +71,8 @@ static void handleSmartHubScanStart();
 static void handleSmartHubScanStop();
 static void handleSmartHubSave();
 static void handleSmartHubListen();
+static void showMqttPage();
+static void handleMqttSave();
 static void handleApply();
 static void servePortalCss();
 static void showOverviewPage();
@@ -100,6 +104,8 @@ WebServerRoute WebServerRoute::all[] = {
     { .path = "/smart-hub/scan/stop", .method = HTTP_POST, .handler = handleSmartHubScanStop },
     { .path = "/smart-hub/save", .method = HTTP_POST, .handler = handleSmartHubSave },
     { .path = "/smart-hub/listen", .method = HTTP_POST, .handler = handleSmartHubListen },
+    { .path = "/mqtt", .method = HTTP_GET, .handler = showMqttPage },
+    { .path = "/mqtt/save", .method = HTTP_POST, .handler = handleMqttSave },
     { .path = "/review", .method = HTTP_GET, .handler = showReviewPage },
     { .path = "/apply", .method = HTTP_POST, .handler = handleApply },
 };
@@ -168,6 +174,10 @@ bool Portal::setup() {
         auto smartHubConfig = Config::SmartHub();
         smartHubConfig.load();
         smartHubReady = smartHubConfig.isValid();
+
+        auto mqttConfig = Config::Mqtt();
+        mqttConfig.load();
+        mqttReady = mqttConfig.isValid();
     }
 
     // Subscribe to Smart Hub events for the portal UI. Subscribing does not
@@ -256,11 +266,13 @@ static bool bothConfigsValid() {
     networkConfig.load();
     auto smartHubConfig = Config::SmartHub();
     smartHubConfig.load();
-    return networkConfig.isValid() && smartHubConfig.isValid();
+    auto mqttConfig = Config::Mqtt();
+    mqttConfig.load();
+    return networkConfig.isValid() && smartHubConfig.isValid() && mqttConfig.isValid();
 }
 
 static bool canReboot() {
-    return networkReady && smartHubReady && bothConfigsValid();
+    return networkReady && smartHubReady && mqttReady && bothConfigsValid();
 }
 
 static String formatAddressHex(uint64_t address) {
@@ -370,6 +382,10 @@ void showSmartHubPage() {
     webServer.send_P(200, "text/html", PORTAL_SMART_HUB_HTML);
 }
 
+void showMqttPage() {
+    webServer.send_P(200, "text/html", PORTAL_MQTT_HTML);
+}
+
 void servePortalCss() {
     webServer.send_P(200, "text/css", PORTAL_CSS);
 }
@@ -379,6 +395,8 @@ void showOverviewPage() {
     networkConfig.load();
     auto smartHubConfig = Config::SmartHub();
     smartHubConfig.load();
+    auto mqttConfig = Config::Mqtt();
+    mqttConfig.load();
 
     String interface = "none";
     if (networkConfig.interface == Config::Network::Interface::WiFi) {
@@ -398,6 +416,13 @@ void showOverviewPage() {
     json += ",\"label\":\"" + jsonEscape(smartHubLabel()) + "\"";
     json += ",\"channel\":" + String(smartHubConfig.endpoint.channel);
     json += ",\"address\":\"" + formatAddressHex(smartHubConfig.endpoint.address) + "\"}";
+    json += ",\"mqtt\":{\"valid\":";
+    json += (mqttConfig.isValid() ? "true" : "false");
+    json += ",\"ipAddress\":\"" + mqttConfig.ipAddress.toString() + "\"";
+    json += ",\"port\":" + String(mqttConfig.port);
+    json += ",\"username\":\"" + jsonEscape(String(mqttConfig.username)) + "\"";
+    json += ",\"password\":\"" + jsonEscape(String(mqttConfig.password)) + "\"}";
+    json += ",\"mqttReady\":" + String(mqttReady ? "true" : "false");
     json += ",\"networkReady\":" + String(networkReady ? "true" : "false");
     json += ",\"smartHubReady\":" + String(smartHubReady ? "true" : "false");
     json += ",\"canReboot\":" + String(canReboot() ? "true" : "false");
@@ -595,6 +620,38 @@ void handleSmartHubSave() {
     }
     SmartHub::startListening(endpoint);
 
+    webServer.sendHeader("Location", "/mqtt", true);
+    webServer.send(303, "text/plain", "");
+}
+
+#pragma mark - MQTT step
+
+void handleMqttSave() {
+    auto config = Config::Mqtt();
+    String ipArg = webServer.arg("ipAddress");
+    String portArg = webServer.arg("port");
+    String usernameArg = webServer.arg("username");
+    String passwordArg = webServer.arg("password");
+
+    IPAddress ip;
+    long port = portArg.toInt();
+    if (!ip.fromString(ipArg) || static_cast<uint32_t>(ip) == 0 ||
+        portArg.length() == 0 || port <= 0 || port > 65535 ||
+        usernameArg.length() > MQTT_USERNAME_MAX_LENGTH ||
+        passwordArg.length() > MQTT_PASSWORD_MAX_LENGTH) {
+        webServer.send(400, "text/plain", "Bad Request: Invalid MQTT broker settings");
+        return;
+    }
+
+    config.load();
+    config.ipAddress = ip;
+    config.port = (uint16_t)port;
+    strcpy(config.username, usernameArg.c_str());
+    strcpy(config.password, passwordArg.c_str());
+    config.save();
+    mqttReady = true;
+
+    // Advance to the next setup step; reboot happens from Review.
     webServer.sendHeader("Location", "/review", true);
     webServer.send(303, "text/plain", "");
 }
@@ -603,7 +660,7 @@ void handleSmartHubSave() {
 
 void handleApply() {
     if (!canReboot()) {
-        webServer.send(400, "text/plain", "Bad Request: Save both Network and Smart Hub configs first");
+        webServer.send(400, "text/plain", "Bad Request: Save Network, Smart Hub and MQTT configs first");
         return;
     }
 

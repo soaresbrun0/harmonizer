@@ -84,6 +84,9 @@
                     var navNetwork = document.getElementById('nav-network');
                     navNetwork.textContent = o.networkReady ? 'Done' : 'Pending';
                     navNetwork.className = o.networkReady ? 'done' : 'pending';
+                    var navMqtt = document.getElementById('nav-mqtt');
+                    navMqtt.textContent = o.mqttReady ? 'Done' : 'Pending';
+                    navMqtt.className = o.mqttReady ? 'done' : 'pending';
                 })
                 .catch(err => {});
         }
@@ -126,7 +129,8 @@
         <div class='steps'>
             <a href='/network'>1. Network <span id='nav-network' class='pending'>...</span></a>
             <a href='/smart-hub' class='active'>2. Smart Hub <span id='nav-smart-hub' class='pending'>...</span></a>
-            <a href='/review'>3. Review</a>
+            <a href='/mqtt'>3. MQTT <span id='nav-mqtt' class='pending'>...</span></a>
+            <a href='/review'>4. Review</a>
         </div>
         <p class='kv'>Radio: <b id='radio_state'>...</b></p>
         <p class='note' id='scan_hint'>...</p>

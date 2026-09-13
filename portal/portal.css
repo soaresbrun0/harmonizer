@@ -16,6 +16,10 @@ input[type=submit]:disabled { background-color: #9db9c1; cursor: default; }
 .steps a { flex: 1; text-align: center; padding: 8px 4px; background: #eef1f4; border-radius: 4px; text-decoration: none; color: #333; font-size: 13px; }
 .steps a.active { background: #dde7ec; font-weight: bold; }
 .steps a span { display: block; }
+@media (max-width: 380px) {
+    .steps { gap: 4px; }
+    .steps a { font-size: 11px; padding: 8px 2px; }
+}
 .done { color: #4CAF50; font-weight: bold; }
 .pending { color: #b7791f; font-weight: bold; }
 .kv { font-size: 14px; margin: 4px 0; }

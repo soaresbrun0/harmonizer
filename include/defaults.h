@@ -26,6 +26,18 @@
 #define WL_WPA_KEY_MAX_LENGTH 63
 #endif
 
+#ifndef MQTT_DEFAULT_PORT
+#define MQTT_DEFAULT_PORT 1883
+#endif
+
+#ifndef MQTT_USERNAME_MAX_LENGTH
+#define MQTT_USERNAME_MAX_LENGTH 64
+#endif
+
+#ifndef MQTT_PASSWORD_MAX_LENGTH
+#define MQTT_PASSWORD_MAX_LENGTH 128
+#endif
+
 #ifndef DNS_PORT
 #define DNS_PORT 53
 #endif

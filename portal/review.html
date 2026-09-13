@@ -16,12 +16,16 @@
                 .then(o => {
                     setBadge('nav-network', o.networkReady);
                     setBadge('nav-smart-hub', o.smartHubReady);
+                    setBadge('nav-mqtt', o.mqttReady);
                     document.getElementById('network-status').textContent = !o.network.valid
                         ? 'Not configured'
                         : (o.network.interface === 'wifi' ? 'Wi-Fi: ' + o.network.ssid : 'Ethernet');
                     document.getElementById('smart-hub-status').textContent = !o.smartHub.valid
                         ? 'Not configured'
                         : 'Channel ' + o.smartHub.channel + ', Address ' + o.smartHub.address;
+                    document.getElementById('mqtt-status').textContent = !o.mqtt.valid
+                        ? 'Not configured'
+                        : 'Broker: ' + o.mqtt.ipAddress + ':' + o.mqtt.port;
                     document.getElementById('reboot-btn').disabled = !o.canReboot;
                     document.getElementById('reboot-btn').value = o.rebootRequired ? 'Apply & Reboot' : 'Apply';
                     document.getElementById('reboot-note').textContent = o.canReboot
@@ -63,16 +67,19 @@
 <body>
     <div class='container'>
         <div id="page-overlay" class="overlay hidden"><div class="spinner"></div></div>
-        <h2>Step 3 - Review</h2>
+        <h2>Step 4 - Review</h2>
         <div class='steps'>
             <a href='/network'>1. Network <span id='nav-network' class='pending'>...</span></a>
             <a href='/smart-hub'>2. Smart Hub <span id='nav-smart-hub' class='pending'>...</span></a>
-            <a href='/review' class='active'>3. Review</a>
+            <a href='/mqtt'>3. MQTT <span id='nav-mqtt' class='pending'>...</span></a>
+            <a href='/review' class='active'>4. Review</a>
         </div>
         <p class='section-label'>Network:</p>
         <p class='kv' id='network-status'>Loading...</p>
         <p class='section-label'>Emulated Smart Hub:</p>
         <p class='kv' id='smart-hub-status'>Loading...</p>
+        <p class='section-label'>MQTT:</p>
+        <p class='kv' id='mqtt-status'>Loading...</p>
         <p class='section-label'>Test Remote:</p>
         <p class='note'>To confirm the Smart Hub emulation works, press any buttons on the Companion remote.</p>
         <div id='pressed-buttons'></div>

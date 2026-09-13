@@ -135,6 +135,7 @@
                     document.getElementById('current').textContent = o.network.label;
                     setBadge('nav-network', o.networkReady);
                     setBadge('nav-smart-hub', o.smartHubReady);
+                    setBadge('nav-mqtt', o.mqttReady);
                     if (!o.network.valid) {
                         scanNetworks();
                         return;
@@ -173,7 +174,8 @@
         <div class='steps'>
             <a href='/network' class='active'>1. Network <span id='nav-network' class='pending'>...</span></a>
             <a href='/smart-hub'>2. Smart Hub <span id='nav-smart-hub' class='pending'>...</span></a>
-            <a href='/review'>3. Review</a>
+            <a href='/mqtt'>3. MQTT <span id='nav-mqtt' class='pending'>...</span></a>
+            <a href='/review'>4. Review</a>
         </div>
         <p class='kv' id='current'>Loading...</p>
         <form action='/network/save' method='POST'>

@@ -35,6 +35,7 @@ SOURCES = (
     ("PORTAL_REVIEW_HTML", "review.html"),
     ("PORTAL_NETWORK_HTML", "network.html"),
     ("PORTAL_SMART_HUB_HTML", "smart_hub.html"),
+    ("PORTAL_MQTT_HTML", "mqtt.html"),
     ("PORTAL_REBOOT_HTML", "reboot.html"),
     ("PORTAL_APPLIED_HTML", "applied.html"),
     ("PORTAL_CSS", "portal.css"),
