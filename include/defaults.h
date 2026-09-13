@@ -45,3 +45,7 @@
 #ifndef WEB_SERVER_PORT
 #define WEB_SERVER_PORT 80
 #endif
+
+#ifndef HA_ENTITY_VALUE_MAX_LENGTH
+#define HA_ENTITY_VALUE_MAX_LENGTH 128
+#endif

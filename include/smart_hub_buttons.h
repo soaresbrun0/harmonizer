@@ -19,6 +19,7 @@ namespace SmartHub {
         static const size_t count;
         static Button find(uint8_t groupCode, uint16_t code);
         static ParseResult parse(const uint8_t *bytes, size_t length, Button *outButtons, uint8_t *inOutButtonCount);
+        bool operator==(const Button& other) const;
         void printDetails(void) const;
     };
 }

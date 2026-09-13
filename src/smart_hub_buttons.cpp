@@ -156,6 +156,10 @@ SmartHub::Button::ParseResult SmartHub::Button::parse(const uint8_t *bytes, size
     return ParseResult::Success;
 }
 
+bool SmartHub::Button::operator==(const Button &other) const {
+    return groupCode == other.groupCode && code == other.code;
+}
+
 void SmartHub::Button::printDetails(void) const {
     Serial.print("Group Code      = 0x");
     Serial.println(groupCode, HEX);

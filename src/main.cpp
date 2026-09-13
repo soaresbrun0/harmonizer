@@ -2,6 +2,8 @@
 
 #include "config/smart_hub.h"
 #include "config/network.h"
+#include "config/mqtt.h"
+#include "home_assistant.h"
 #include "smart_hub.h"
 #include "network.h"
 #include "portal.h"
@@ -30,9 +32,18 @@ void setup() {
         Serial.println("Failed to setup config portal.");
         while (1); // halt execution
     }
+
+    // MQTT is best-effort: a failed broker connection retries in the
+    // background and must never block the portal.
+    auto mqttConfig = Config::Mqtt();
+    mqttConfig.load();
+    if (mqttConfig.isValid()) {
+        HomeAssistant::setup(mqttConfig);
+    }
 }
 
 void loop() {
     SmartHub::loop();
     Portal::loop();
+    HomeAssistant::loop();
 }
