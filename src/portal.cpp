@@ -665,9 +665,10 @@ void handleApply() {
     }
 
     // Only a network change needs a reboot; anything else is already live.
+    // Same grace period as the HA reboot button: let the response flush.
     if (networkChanged) {
         webServer.send_P(200, "text/html", PORTAL_REBOOT_HTML);
-        scheduledRebootTime = millis() + 3000;
+        scheduledRebootTime = millis() + HA_REBOOT_DELAY_MS;
     } else {
         webServer.send_P(200, "text/html", PORTAL_APPLIED_HTML);
     }

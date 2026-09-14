@@ -55,6 +55,18 @@ Dependencies (`RF24`, ArduinoHA) resolve automatically; the portal web pages are
 
 Button names are `snake_case` (`number_0`–`number_9`, `channel_up`, `skip_forward`, …); activity buttons drop the `Activity` prefix (`tv`, `music`, `movie`).
 
+The device page also carries a `problem` sensor (`Device Health` — reports off every second when healthy, expires to unknown after 3 s of silence), one sensor per trendable signal so HA can graph each (`Heap` with heap size, low-water mark, largest allocatable block, and free percent as attributes; `CPU`: loop rate in Hz with core count and clock as attributes; `Flash` with total flash, free sketch space, and free percent as attributes; `Uptime` in seconds; `PSRAM` when the board has PSRAM; `Wi-Fi`: RSSI plus SSID/BSSID/IP, also expiring after 3 s), an `Other Device Attributes` sensor carrying the remaining static chip facts (model, revision, SDK), and a `Restart` button that reboots the MCU a second after being pressed. Last known values persist while offline. This template binary sensor turns quiet into a visible problem:
+
+```yaml
+# Confirm the Wi-Fi sensor's entity_id in HA first (e.g. States dev tool)
+# and use it below in place of sensor.harmonizer_smart_hub_wi_fi.
+template:
+  - binary_sensor:
+      - name: "Harmonizer Wi-Fi problem"
+        device_class: problem
+        state: "{{ states('sensor.harmonizer_smart_hub_wi_fi') in ['unknown', 'unavailable'] }}"
+```
+
 ## Differences from pkscout's Harmoino
 
 Harmonizer builds on the RF work of [pkscout/Harmoino](https://github.com/pkscout/Harmoino) (itself a fork of [joakimjalden/Harmoino](https://github.com/joakimjalden/Harmoino)) but changes how the bridge is configured and consumed:

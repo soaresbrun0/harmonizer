@@ -5,6 +5,8 @@
 #include <WiFi.h>
 
 #include "defaults.h"
+#include "metrics.h"
+#include "network.h"
 #include "portal.h"
 #include "smart_hub.h"
 #include "util.h"
@@ -35,8 +37,28 @@ HAMqtt *mqtt = nullptr;
 HADeviceTriggerRegistry *buttonShortPressTriggers = nullptr;
 HADeviceTriggerRegistry *buttonShortReleaseTriggers = nullptr;
 
+HABinarySensor *deviceHealthSensor = nullptr;
+HASensor *heapSensor = nullptr;
+HASensor *cpuSensor = nullptr;
+HASensor *psramSensor = nullptr;
+HASensor *flashSensor = nullptr;
+HASensor *uptimeSensor = nullptr;
+HASensor *otherAttributesSensor = nullptr;
+HASensor *wifiSensor = nullptr;
+HAButton *rebootButton = nullptr;
+
+// Metrics report cadence. HASensor has no change detection (every setValue
+// publishes), so this also bounds MQTT traffic to ~12 messages per interval.
+// Heap or PSRAM below their HA_MIN_HEALTHY_*_PERCENT free thresholds is
+// reported as a device-health problem.
+static unsigned long rebootAtMillis = 0;
+static unsigned long lastMetricsMillis = 0;
+static bool firstMetricsRefresh = true;
+
 static void mqttStateChangedCallback(HAMqtt::ConnectionState state);
 static void smartHubButtonPressedCallback(const SmartHub::Endpoint endpoint, const SmartHub::Button *buttons, uint8_t count);
+static void rebootCommandCallback(HAButton *sender);
+static void reportMetrics();
 
 bool HomeAssistant::setup(const Config::Mqtt &config) {
     if (!config.isValid() || mqtt != nullptr) {
@@ -73,6 +95,66 @@ bool HomeAssistant::setup(const Config::Mqtt &config) {
     );
     SmartHub::addButtonPressedCallback(&smartHubButtonPressedCallback);
 
+    deviceHealthSensor = new HABinarySensor("device_health");
+    deviceHealthSensor->setName("Device Health");
+    deviceHealthSensor->setDeviceClass("problem");
+    // Silence means trouble: HA marks the entity unknown if no state
+    // arrives within 3 refresh intervals. This only means anything because
+    // the health state is force-published every refresh below.
+    deviceHealthSensor->setExpireAfter(3 * (HA_METRICS_REPORT_INTERVAL_MS / 1000));
+
+    // One sensor per trendable signal so HA can graph each over time.
+    // Static chip facts live on other_device_attributes instead.
+    heapSensor = new HASensor("heap", HASensor::JsonAttributesFeature);
+    heapSensor->setName("Heap");
+    heapSensor->setIcon("mdi:memory");
+    heapSensor->setDeviceClass("data_size");
+    heapSensor->setUnitOfMeasurement("kB");
+
+    cpuSensor = new HASensor("cpu", HASensor::JsonAttributesFeature);
+    cpuSensor->setName("CPU");
+    cpuSensor->setIcon("mdi:cpu-32-bit");
+    cpuSensor->setDeviceClass("frequency");
+    cpuSensor->setUnitOfMeasurement("Hz");
+
+    // PSRAM only exists on some boards; no sensor without it.
+    if (Metrics::hasPsram()) {
+        psramSensor = new HASensor("psram", HASensor::JsonAttributesFeature);
+        psramSensor->setName("PSRAM");
+        psramSensor->setIcon("mdi:memory");
+        psramSensor->setDeviceClass("data_size");
+        psramSensor->setUnitOfMeasurement("kB");
+    }
+
+    flashSensor = new HASensor("flash", HASensor::JsonAttributesFeature);
+    flashSensor->setName("Flash");
+    flashSensor->setIcon("mdi:memory");
+    flashSensor->setDeviceClass("data_size");
+    flashSensor->setUnitOfMeasurement("kB");
+
+    uptimeSensor = new HASensor("uptime", HASensor::JsonAttributesFeature);
+    uptimeSensor->setName("Uptime");
+    uptimeSensor->setDeviceClass("duration");
+    uptimeSensor->setUnitOfMeasurement("s");
+
+    otherAttributesSensor = new HASensor("other_attrs", HASensor::JsonAttributesFeature);
+    otherAttributesSensor->setName("Other Attributes");
+    otherAttributesSensor->setIcon("mdi:shape-outline");
+
+    wifiSensor = new HASensor("wifi", HASensor::JsonAttributesFeature);
+    wifiSensor->setName("Wi-Fi");
+    wifiSensor->setDeviceClass("signal_strength");
+    wifiSensor->setUnitOfMeasurement("dBm");
+    // Silence means trouble: HA marks the entity unknown if no state
+    // arrives within 3 refresh intervals. A template binary sensor
+    // (see README) maps unknown/unavailable to a problem state.
+    wifiSensor->setExpireAfter(3 * (HA_METRICS_REPORT_INTERVAL_MS / 1000));
+
+    rebootButton = new HAButton("reboot");
+    rebootButton->setName("Restart");
+    rebootButton->setIcon("mdi:restart");
+    rebootButton->onCommand(&rebootCommandCallback);
+
     Serial.print("Starting Home Assistant bridge at mqtt://");
     Serial.print(config.ipAddress);
     Serial.print(":");
@@ -98,9 +180,26 @@ void HomeAssistant::loop() {
         return;
     }
     mqtt->loop();
+
+    if (rebootAtMillis != 0 && (int32_t)(millis() - rebootAtMillis) >= 0) {
+        rebootAtMillis = 0;
+        Serial.println("Rebooting...");
+        Serial.flush();
+        ESP.restart();
+    }
+
+    // Gated on MQTT: nothing here can publish while disconnected, and the
+    // forced first refresh is only spent once it can actually go out.
+    unsigned long now = millis();
+    unsigned long elapsedMillis = now - lastMetricsMillis;
+    if (mqtt->isConnected() && (firstMetricsRefresh || elapsedMillis >= HA_METRICS_REPORT_INTERVAL_MS)) {
+        lastMetricsMillis = now;
+        reportMetrics();
+        firstMetricsRefresh = false;
+    }
+
     if (!mqtt->isConnected()) {
         static unsigned long lastNoticeMillis = 0;
-        unsigned long now = millis();
         if (now - lastNoticeMillis >= 30000UL) {
             lastNoticeMillis = now;
             Serial.print("Home Assistant MQTT not connected, retrying (");
@@ -108,6 +207,93 @@ void HomeAssistant::loop() {
             Serial.println(" ms).");
         }
     }
+}
+
+static void rebootCommandCallback(HAButton *sender) {
+    (void)sender;
+    // Deferred: this runs inside mqtt->loop() while it processes the
+    // incoming command, so restarting here would cut the connection
+    // mid-handler. loop() performs the restart after the delay instead.
+    Serial.println("Reboot requested from Home Assistant.");
+    rebootAtMillis = millis() + HA_REBOOT_DELAY_MS;
+}
+
+static void reportMetrics() {
+    auto device = Metrics::takeDeviceSnapshot();
+
+    // Health is force-published every refresh (not just on change) so the
+    // signal doubles as a heartbeat: a device that stops reporting every
+    // second expires to unknown via the expire_after above. Failed
+    // publishes are not cached by the library and retry on the next
+    // refresh by themselves.
+    bool critical = device.heap.freePercent() < HA_MIN_HEALTHY_HEAP_PERCENT
+        || device.psram.freePercent() < HA_MIN_HEALTHY_PSRAM_PERCENT;
+    deviceHealthSensor->setState(critical, true);
+
+    if (!mqtt->isConnected()) {
+        return;
+    }
+
+    char heapStr[12];
+    snprintf(heapStr, sizeof(heapStr), "%u", (unsigned)(device.heap.freeHeap / 1024UL));
+    heapSensor->setValue(heapStr);
+
+    char heapAttrs[112];
+    device.heap.toJson(heapAttrs, sizeof(heapAttrs));
+    heapSensor->setJsonAttributes(heapAttrs);
+
+    char loopStr[12];
+    snprintf(loopStr, sizeof(loopStr), "%lu", device.cpu.loopHertz);
+    cpuSensor->setValue(loopStr);
+
+    char cpuAttrs[80];
+    device.cpu.toJson(cpuAttrs, sizeof(cpuAttrs));
+    cpuSensor->setJsonAttributes(cpuAttrs);
+
+    char uptimeStr[12];
+    snprintf(uptimeStr, sizeof(uptimeStr), "%lu", device.uptime.seconds);
+    uptimeSensor->setValue(uptimeStr);
+
+    char uptimeAttrs[32];
+    device.uptime.toJson(uptimeAttrs, sizeof(uptimeAttrs));
+    uptimeSensor->setJsonAttributes(uptimeAttrs);
+
+    char flashStr[12];
+    snprintf(flashStr, sizeof(flashStr), "%u", (unsigned)(device.flash.sketchSize / 1024UL));
+    flashSensor->setValue(flashStr);
+
+    char flashAttrs[80];
+    device.flash.toJson(flashAttrs, sizeof(flashAttrs));
+    flashSensor->setJsonAttributes(flashAttrs);
+
+    otherAttributesSensor->setValue(device.otherAttributes.chipModel);
+
+    char staticAttrs[224];
+    device.otherAttributes.toJson(staticAttrs, sizeof(staticAttrs));
+    otherAttributesSensor->setJsonAttributes(staticAttrs);
+
+    if (psramSensor != nullptr) {
+        char psramStr[12];
+        snprintf(psramStr, sizeof(psramStr), "%u", (unsigned)(device.psram.freePsram / 1024UL));
+        psramSensor->setValue(psramStr);
+
+        char psramAttrs[64];
+        device.psram.toJson(psramAttrs, sizeof(psramAttrs));
+        psramSensor->setJsonAttributes(psramAttrs);
+    }
+
+    auto wifi = Metrics::takeWiFiSnapshot();
+    if (!wifi.connected) {
+        return;
+    }
+
+    char rssiStr[8];
+    snprintf(rssiStr, sizeof(rssiStr), "%ld", wifi.rssi);
+    wifiSensor->setValue(rssiStr);
+
+    char wifiAttrs[192];
+    wifi.toJson(wifiAttrs, sizeof(wifiAttrs));
+    wifiSensor->setJsonAttributes(wifiAttrs);
 }
 
 #pragma mark - HADeviceTriggerRegistry
