@@ -1,7 +1,7 @@
 # Harmonizer Automations
 
 Harmonizer button pressed/released events arrive as MQTT device triggers (`button_short_press` /
-`button_short_release` + `subtype`). The 13 automations in this folder translate those into
+`button_short_release` + `subtype`). The 15 automations in this folder translate those into
 lights, receiver volume, Apple TV / Google TV commands, and TV-activity
 scene selection. Shared state lives in `var.*` helpers (click counters,
 timestamps, selected light), plus `media_player.tx_rz810` (the AV receiver).
@@ -49,10 +49,12 @@ File map (`harmonizer_<button>.yaml`):
 | `harmonizer_off.yaml` | off | Runs the turn-off-media-devices automation |
 | `harmonizer_light_1.yaml` | light_1 | Family-room lights + selects them for +/− |
 | `harmonizer_light_2.yaml` | light_2 | Accent lights + selects them for +/− |
-| `harmonizer_plus.yaml` | plus | Brighten selected light while held |
-| `harmonizer_minus.yaml` | minus | Dim selected light while held |
-| `harmonizer_apple_tv.yaml` | up/down/left/right/select/menu/etc. | Forwards buttons to Apple TV remote |
-| `harmonizer_google_tv.yaml` | up/down/left/right/digits/colors/etc. | Forwards buttons to Google TV remote |
+| `harmonizer_plus.yaml` | plus | Tap: one step brighter; hold: ramp after a pause |
+| `harmonizer_minus.yaml` | minus | Tap: one step dimmer; hold: ramp after a pause |
+| `harmonizer_apple_tv.yaml` | select/menu/transport/etc. (no D-pad) | Forwards buttons to Apple TV remote |
+| `harmonizer_dpad_apple_tv.yaml` | up/down/left/right | Tap: single move; hold: repeat |
+| `harmonizer_google_tv.yaml` | digits/colors/transport/etc. (no D-pad) | Forwards buttons to Google TV remote |
+| `harmonizer_dpad_google_tv.yaml` | up/down/left/right | Tap: single move; hold: repeat |
 | `harmonizer_volume_up.yaml` | volume_up | Raise receiver volume while held |
 | `harmonizer_volume_down.yaml` | volume_down | Lower receiver volume while held |
 | `harmonizer_mute.yaml` | mute | Mutes/unmutes receiver |
@@ -94,33 +96,50 @@ Threshold is 0.5 s (`long_press_delay_in_seconds`).
 - `back` (Apple TV only, gated on receiver source `APPLE TV`): tap sends
   `menu`, hold sends `top_menu` to `remote.family_room_apple_tv`.
 
-### 3. Repeat while held (`plus`, `minus`, `volume_up`, `volume_down`)
+### 3. Tap-then-hold repeat (`plus`, `minus`, `volume_up`, `volume_down`)
 
-Used for smooth dimming / volume ramping.
+Used for smooth dimming / volume ramping with a responsive tap.
 
 - `pressed` enters a `repeat / while` loop; `released` is an empty branch.
 - With `mode: restart`, releasing restarts the automation into the empty
   branch, which kills the loop.
+- The first loop iteration fires immediately (so a tap always applies one
+  step), then waits `long_press_delay_in_seconds` (0.5 s) before ramping at
+  `repeat_delay_in_seconds` (0.1 s) — the pause tells a tap apart from a
+  hold without delaying the tap itself. Uses the `repeat.first` loop
+  variable to pick the delay.
 - `plus` / `minus`: step the selected light (`var.harmonizer_selected_light`)
-  by ±10% (`brightness_step_pct`) every 0.2 s until fully bright / dark.
+  by ±10% (`brightness_step_pct`) until fully bright / dark.
   `minus` additionally requires the light to be on.
-- `volume_up` / `volume_down`: nudge `media_player.tx_rz810` by ±0.005 every
-  0.2 s while the level is within 0–1. Both require the receiver to be `on`,
+- `volume_up` / `volume_down`: nudge `media_player.tx_rz810` by ±0.005
+  while the level is within 0–1. Both require the receiver to be `on`,
   so they do nothing when nothing is playing.
 
-### 4. Button-ID passthrough (`Apple TV`, `Google TV`)
+### 4. Button-ID passthrough (`other`, both streamers)
 
-Used to reuse the whole D-pad / transport cluster for whichever streamer is
-active.
+Used to reuse the transport / menu / digit cluster for whichever streamer is
+active. (The D-pad lives in its own tap+hold automations, pattern 6.)
 
-- One automation declares 12 (Apple TV) or 32 (Google TV) triggers, each
-  with its own trigger `id` (`up`, `DPAD_UP`, `MEDIA_PLAY`, `PROG_RED`, …).
+- One automation declares 8 (Apple TV) or 28 (Google TV) triggers, each
+  with its own trigger `id` (`select`, `DPAD_UP`, `MEDIA_PLAY`, `PROG_RED`, …).
 - The single action forwards `command: '{{ trigger.id }}'` to the matching
   remote (`remote.family_room_apple_tv` / `remote.family_room_google_tv`).
 - A condition gates on the receiver's source attribute (`APPLE TV` vs.
   `GOOGLE TV`), so only the active streamer's automation reacts.
 - `mode: queued (max: 10)` preserves rapid button mashes instead of
   cancelling them like `restart` would.
+
+### 6. D-pad tap+hold (`d-pad`, both streamers)
+
+- Press triggers (`up`/`down`/`left`/`right`) and matching release triggers
+  (`up_released`, …). The action ignores `*_released` IDs and repeats
+  `send_command` while held; `mode: restart` means a release restarts into
+  the no-op branch and kills the loop.
+- The loop runs while the remote entity reads `on`/`idle`, gated on the
+  receiver source like pattern 4.
+- Deliberately no delay step (unlike pattern 3): the streamers answer
+  navigational commands slowly enough that their own round-trip paces the
+  repeat — an extra delay would only make held moves feel more sluggish.
 
 ### 5. Simple and guarded one-shots (`off`, `mute`)
 
@@ -133,9 +152,10 @@ active.
 
 ## Timing and step constants
 
-- 0.5 s: multi-click window (`tv`, `movie`) and long-press threshold
-  (`light_*`, `back`).
-- 0.2 s: hold-to-repeat rate (`plus`, `minus`, `volume_*`).
+- 0.5 s: multi-click window (`tv`, `movie`), long-press threshold
+  (`light_*`, `back`), and first-pause before ramping (`plus`, `minus`,
+  `volume_*`).
+- 0.1 s: hold-to-repeat rate once ramping (`plus`, `minus`, `volume_*`).
 - ±10% brightness steps; ±0.005 volume steps.
 - `restart` = cancellable (click counting, press-vs-hold, repeat loops);
   `queued` = every press counts (remote passthrough); `single` = fire once

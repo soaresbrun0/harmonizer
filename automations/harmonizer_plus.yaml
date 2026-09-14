@@ -1,5 +1,5 @@
 alias: 'Harmonizer: plus'
-description: 'Brighten the selected light while held'
+description: Brighten the selected light while held
 triggers:
 - domain: mqtt
   device_id: 8679b73f0fe819ef8ba86f5ff4579a92
@@ -31,7 +31,8 @@ actions:
           target:
             entity_id: '{{ selected_light }}'
         - delay:
-            seconds: '{{ repeat_delay_in_seconds }}'
+            seconds: '{{ long_press_delay_in_seconds if repeat.first else repeat_delay_in_seconds
+              }}'
   - conditions:
     - condition: trigger
       id: released
@@ -39,4 +40,5 @@ actions:
 mode: restart
 variables:
   selected_light: '{{ states(''var.harmonizer_selected_light'') }}'
-  repeat_delay_in_seconds: 0.2
+  long_press_delay_in_seconds: 0.5
+  repeat_delay_in_seconds: 0.1

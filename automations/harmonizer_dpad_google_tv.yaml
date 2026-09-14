@@ -1,0 +1,75 @@
+alias: 'Harmonizer: d-pad (Google TV)'
+description: 'Tap: up, down, left, right; hold: repeat'
+triggers:
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: up
+  trigger: device
+  id: DPAD_UP
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: down
+  trigger: device
+  id: DPAD_DOWN
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: left
+  trigger: device
+  id: DPAD_LEFT
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: right
+  trigger: device
+  id: DPAD_RIGHT
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_release
+  subtype: up
+  trigger: device
+  id: up_released
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_release
+  subtype: down
+  trigger: device
+  id: down_released
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_release
+  subtype: left
+  trigger: device
+  id: left_released
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_release
+  subtype: right
+  trigger: device
+  id: right_released
+conditions:
+- condition: state
+  entity_id: media_player.tx_rz810
+  state:
+  - GOOGLE TV
+  attribute: source
+actions:
+- choose:
+  - conditions:
+    - condition: template
+      value_template: '{{ not trigger.id.endswith(''_released'') }}'
+    sequence:
+    - repeat:
+        while:
+        - condition: template
+          value_template: '{{ states(remote) in [''on'', ''idle''] }}'
+        sequence:
+        - action: remote.send_command
+          data:
+            entity_id: '{{ remote }}'
+            command: '{{ trigger.id }}'
+mode: restart
+variables:
+  remote: remote.family_room_google_tv
