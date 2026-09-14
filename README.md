@@ -2,6 +2,10 @@
 
 Firmware for an ESP32 that turns a Logitech Harmony Companion remote into a Home Assistant controller. An nRF24L01+ radio listens for the remote's RF commands and each button press is published to Home Assistant over MQTT as an individual device trigger, ready to use in automations — no Harmony Hub software or cloud account involved at runtime.
 
+If Harmonizer saved you some time or sparked an idea, help support the next late-night build:
+
+<a href="https://www.buymeacoffee.com/soaresbrun0" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
 ## Features
 
 - **Config portal, no reflashing.** Wi-Fi, Smart Hub endpoint, and MQTT broker settings are all configured from a step-by-step web wizard served by the device itself (captive AP on first boot, then on its LAN address). Saving the MQTT or hub settings never requires recompiling.
