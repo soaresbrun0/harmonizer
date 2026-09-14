@@ -1,0 +1,56 @@
+alias: 'Harmonizer: light_1'
+description: 'Tap: family-room lights on; hold: off. Selects them for +/-'
+triggers:
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: light_1
+  trigger: device
+  id: pressed
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_release
+  subtype: light_1
+  trigger: device
+  id: released
+conditions: []
+actions:
+- action: var.set
+  data:
+    entity_id: '{{ selected_light_var }}'
+    value: '{{ current_light }}'
+- choose:
+  - conditions:
+    - condition: trigger
+      id: pressed
+    sequence:
+    - action: var.set
+      data:
+        entity_id: '{{ last_pressed_timestamp_var }}'
+        value: '{{ as_timestamp(now()) }}'
+    - if:
+      - condition: template
+        value_template: '{{ is_state(current_light, ''on'') }}'
+      then:
+      - delay:
+          seconds: '{{ long_press_delay_in_seconds }}'
+      - action: light.turn_off
+        data:
+          entity_id: '{{ current_light }}'
+      else:
+      - action: light.turn_on
+        data:
+          entity_id: '{{ current_light }}'
+  - conditions:
+    - condition: trigger
+      id: released
+    - condition: template
+      value_template: '{{ as_timestamp(now()) - (states(last_pressed_timestamp_var)
+        | float) < long_press_delay_in_seconds }}'
+    sequence: []
+mode: restart
+variables:
+  current_light: light.family_room_lights
+  selected_light_var: var.harmonizer_selected_light
+  last_pressed_timestamp_var: var.harmonizer_light_1_last_pressed_timestamp
+  long_press_delay_in_seconds: 0.5

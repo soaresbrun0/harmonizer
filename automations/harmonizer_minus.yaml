@@ -1,0 +1,45 @@
+alias: 'Harmonizer: minus'
+description: 'Dim the selected light while held'
+triggers:
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: minus
+  trigger: device
+  id: pressed
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_release
+  subtype: minus
+  trigger: device
+  id: released
+conditions:
+- condition: template
+  value_template: '{{ is_state(selected_light, ''on'') }}'
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: pressed
+    sequence:
+    - repeat:
+        while:
+        - condition: template
+          value_template: '{{ state_attr(selected_light, ''brightness'') | int(0)
+            > 0 }}'
+        sequence:
+        - action: light.turn_on
+          data:
+            brightness_step_pct: -10
+          target:
+            entity_id: '{{ selected_light }}'
+        - delay:
+            seconds: '{{ repeat_delay_in_seconds }}'
+  - conditions:
+    - condition: trigger
+      id: released
+    sequence: []
+mode: restart
+variables:
+  selected_light: '{{ states(''var.harmonizer_selected_light'') }}'
+  repeat_delay_in_seconds: 0.2

@@ -1,0 +1,92 @@
+alias: 'Harmonizer: Apple TV'
+description: 'Forward remote buttons when active'
+triggers:
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: up
+  trigger: device
+  id: up
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: down
+  trigger: device
+  id: down
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: left
+  trigger: device
+  id: left
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: right
+  trigger: device
+  id: right
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: select
+  trigger: device
+  id: select
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: menu
+  trigger: device
+  id: control_center
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: skip_backward
+  trigger: device
+  id: skip_backward
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: skip_forward
+  trigger: device
+  id: skip_forward
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: play
+  trigger: device
+  id: play
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: pause
+  trigger: device
+  id: pause
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: stop
+  trigger: device
+  id: stop
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: exit
+  trigger: device
+  id: top_menu
+conditions:
+- condition: state
+  entity_id: media_player.tx_rz810
+  state:
+  - APPLE TV
+  attribute: source
+actions:
+- action: remote.send_command
+  target:
+    entity_id: remote.family_room_apple_tv
+  data:
+    num_repeats: 1
+    delay_secs: 0
+    hold_secs: 0
+    command: '{{ trigger.id }}'
+mode: queued
+max: 10

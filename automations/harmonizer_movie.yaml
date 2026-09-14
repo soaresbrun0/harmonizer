@@ -1,0 +1,30 @@
+alias: 'Harmonizer: movie'
+description: '1 click: Apple TV on projector; 2 clicks: Google TV on projector'
+triggers:
+- domain: mqtt
+  device_id: 8679b73f0fe819ef8ba86f5ff4579a92
+  type: button_short_press
+  subtype: movie
+  trigger: device
+conditions: []
+actions:
+- action: var.set
+  data:
+    entity_id: '{{ click_count_var }}'
+    value_template: '{{ states(click_count_var) | int(0) + 1 }}'
+- delay:
+    seconds: 0.5
+- action: automation.trigger
+  target:
+    entity_id: "{% if states(click_count_var) | int(0) == 1 %}\n  automation.watch_apple_tv_on_family_room_projector\n{%
+      elif states(click_count_var) | int(0) == 2 %}\n  automation.watch_google_tv_on_family_room_projector\n{%
+      endif %}\n"
+  data:
+    skip_condition: true
+- action: var.set
+  data:
+    entity_id: '{{ click_count_var }}'
+    value: 0
+mode: restart
+variables:
+  click_count_var: var.harmonizer_movie_click_count
