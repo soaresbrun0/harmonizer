@@ -72,6 +72,9 @@ bool HomeAssistant::setup(const Config::Mqtt &config) {
     device->setManufacturer("soaresbrun0");
     device->setModel("Harmonizer");
     device->setConfigurationUrl(Portal::getUrl());
+    // Prefix every entity unique_id with the per-unit MAC so two
+    // harmonizers on one network register distinct HA entities.
+    device->enableExtendedUniqueIds();
     device->enableSharedAvailability();
     device->enableLastWill();
 
