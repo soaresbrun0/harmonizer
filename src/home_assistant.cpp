@@ -38,6 +38,7 @@ HADeviceTriggerRegistry *buttonShortPressTriggers = nullptr;
 HADeviceTriggerRegistry *buttonShortReleaseTriggers = nullptr;
 
 HABinarySensor *deviceHealthSensor = nullptr;
+HASensor *pressedButtonsSensor = nullptr;
 HASensor *heapSensor = nullptr;
 HASensor *cpuSensor = nullptr;
 HASensor *psramSensor = nullptr;
@@ -102,6 +103,13 @@ bool HomeAssistant::setup(const Config::Mqtt &config) {
     // arrives within HA_SENSOR_STALE_AFTER_S. This only means anything
     // because the health state is force-published every refresh below.
     deviceHealthSensor->setExpireAfter(HA_SENSOR_STALE_AFTER_S);
+
+    // Live held-button set for remote verification (and chord watching).
+    // Event-driven from the button callback below, not the metrics tick.
+    pressedButtonsSensor = new HASensor("pressed_buttons");
+    pressedButtonsSensor->setName("Pressed Buttons");
+    pressedButtonsSensor->setIcon("mdi:remote");
+    pressedButtonsSensor->setValue("");
 
     // One sensor per trendable signal so HA can graph each over time.
     // Static chip facts live on other_device_attributes instead.
@@ -387,6 +395,12 @@ static void mqttStateChangedCallback(HAMqtt::ConnectionState state) {
 
 #pragma mark - Smart Hub callbacks
 
+static int compareButtonNames(const void * const lhs, const void * const rhs) {
+    const char *lhsButtonName = *static_cast<const char * const *>(lhs);
+    const char *rhsButtonName = *static_cast<const char * const *>(rhs);
+    return strcmp(lhsButtonName, rhsButtonName);
+}
+
 static void smartHubButtonPressedCallback(const SmartHub::Endpoint endpoint, const SmartHub::Button *buttons, uint8_t count) {
     // Any button packet (press or release) counts as remote activity and
     // pauses metric reporting until the quiet period elapses.
@@ -433,6 +447,27 @@ static void smartHubButtonPressedCallback(const SmartHub::Endpoint endpoint, con
         if (trigger != nullptr) {
             trigger->trigger();
         }
+    }
+
+    // Publish the currently held set (`+`-joined, sorted, so a chord reads
+    // the same regardless of press order; empty string when idle). Names
+    // are referenced, not copied: they point into SmartHub's static button
+    // table. Every callback carries the full set, so a received packet
+    // always replaces the state — only a total loss of all further packets
+    // can leave a stale value, healed by the next interaction.
+    if (count == 0) {
+        pressedButtonsSensor->setValue("");
+    } else if (count == 1) {
+        pressedButtonsSensor->setValue(buttons[0].name);
+    } else {
+        const char *names[count];
+        for (uint8_t i = 0; i < count; i++) {
+            names[i] = buttons[i].name;
+        }
+        qsort(names, count, sizeof(names[0]), compareButtonNames);
+        char chord[HA_PRESSED_BUTTONS_VALUE_MAX_LENGTH] = { 0 };
+        Util::joinStrings(names, count, chord, sizeof(chord), "+");
+        pressedButtonsSensor->setValue(chord);
     }
 
     // Store pressed buttons to compute the diff in the next callback.

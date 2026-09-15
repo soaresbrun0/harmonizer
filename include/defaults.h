@@ -50,6 +50,11 @@
 #define HA_ENTITY_VALUE_MAX_LENGTH 128
 #endif
 
+// 6 buttons x 24 chars + commas, with room to spare.
+#ifndef HA_PRESSED_BUTTONS_VALUE_MAX_LENGTH
+#define HA_PRESSED_BUTTONS_VALUE_MAX_LENGTH 160
+#endif
+
 #ifndef HA_METRICS_REPORT_INTERVAL_MS
 #define HA_METRICS_REPORT_INTERVAL_MS 1000UL
 #endif
