@@ -54,8 +54,22 @@
 #define HA_METRICS_REPORT_INTERVAL_MS 1000UL
 #endif
 
+// Fixed expiry for expiring sensors, deliberately decoupled from the
+// report interval: reporting pauses while the remote is in use, so an
+// interval-derived timeout would false-trip mid-navigation.
+#ifndef HA_SENSOR_STALE_AFTER_S
+#define HA_SENSOR_STALE_AFTER_S 30
+#endif
+
 #ifndef HA_MIN_HEALTHY_HEAP_PERCENT
 #define HA_MIN_HEALTHY_HEAP_PERCENT 10
+#endif
+
+// Quiet period with no button activity before metric reporting resumes.
+// Reports pause while the remote is in use so publish bursts never stall
+// radio polling on a weak link.
+#ifndef HA_METRICS_REPORT_RESUME_DELAY_MS
+#define HA_METRICS_REPORT_RESUME_DELAY_MS 3000UL
 #endif
 
 #ifndef HA_MIN_HEALTHY_PSRAM_PERCENT

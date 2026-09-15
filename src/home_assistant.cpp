@@ -53,7 +53,7 @@ HAButton *rebootButton = nullptr;
 // reported as a device-health problem.
 static unsigned long rebootAtMillis = 0;
 static unsigned long lastMetricsMillis = 0;
-static bool firstMetricsRefresh = true;
+static unsigned long lastButtonPressMillis = 0;
 
 static void mqttStateChangedCallback(HAMqtt::ConnectionState state);
 static void smartHubButtonPressedCallback(const SmartHub::Endpoint endpoint, const SmartHub::Button *buttons, uint8_t count);
@@ -99,9 +99,9 @@ bool HomeAssistant::setup(const Config::Mqtt &config) {
     deviceHealthSensor->setName("Device Health");
     deviceHealthSensor->setDeviceClass("problem");
     // Silence means trouble: HA marks the entity unknown if no state
-    // arrives within 3 refresh intervals. This only means anything because
-    // the health state is force-published every refresh below.
-    deviceHealthSensor->setExpireAfter(3 * (HA_METRICS_REPORT_INTERVAL_MS / 1000));
+    // arrives within HA_SENSOR_STALE_AFTER_S. This only means anything
+    // because the health state is force-published every refresh below.
+    deviceHealthSensor->setExpireAfter(HA_SENSOR_STALE_AFTER_S);
 
     // One sensor per trendable signal so HA can graph each over time.
     // Static chip facts live on other_device_attributes instead.
@@ -146,9 +146,9 @@ bool HomeAssistant::setup(const Config::Mqtt &config) {
     wifiSensor->setDeviceClass("signal_strength");
     wifiSensor->setUnitOfMeasurement("dBm");
     // Silence means trouble: HA marks the entity unknown if no state
-    // arrives within 3 refresh intervals. A template binary sensor
+    // arrives within HA_SENSOR_STALE_AFTER_S. A template binary sensor
     // (see README) maps unknown/unavailable to a problem state.
-    wifiSensor->setExpireAfter(3 * (HA_METRICS_REPORT_INTERVAL_MS / 1000));
+    wifiSensor->setExpireAfter(HA_SENSOR_STALE_AFTER_S);
 
     rebootButton = new HAButton("reboot");
     rebootButton->setName("Restart");
@@ -190,22 +190,16 @@ void HomeAssistant::loop() {
 
     // Gated on MQTT: nothing here can publish while disconnected, and the
     // forced first refresh is only spent once it can actually go out.
+    // Reporting also pauses while the remote is in use (any button packet
+    // resets the quiet timer) and resumes after HA_METRICS_REPORT_RESUME_DELAY_MS
+    // of silence, so bursts never stall radio polling mid-navigation.
     unsigned long now = millis();
     unsigned long elapsedMillis = now - lastMetricsMillis;
-    if (mqtt->isConnected() && (firstMetricsRefresh || elapsedMillis >= HA_METRICS_REPORT_INTERVAL_MS)) {
+    bool needsMetricsRefresh = lastMetricsMillis == 0 || elapsedMillis >= HA_METRICS_REPORT_INTERVAL_MS;
+    bool idle = lastButtonPressMillis == 0 || now - lastButtonPressMillis >= HA_METRICS_REPORT_RESUME_DELAY_MS;
+    if (mqtt->isConnected() && needsMetricsRefresh && idle) {
         lastMetricsMillis = now;
         reportMetrics();
-        firstMetricsRefresh = false;
-    }
-
-    if (!mqtt->isConnected()) {
-        static unsigned long lastNoticeMillis = 0;
-        if (now - lastNoticeMillis >= 30000UL) {
-            lastNoticeMillis = now;
-            Serial.print("Home Assistant MQTT not connected, retrying (");
-            Serial.print(now);
-            Serial.println(" ms).");
-        }
     }
 }
 
@@ -222,10 +216,10 @@ static void reportMetrics() {
     auto device = Metrics::takeDeviceSnapshot();
 
     // Health is force-published every refresh (not just on change) so the
-    // signal doubles as a heartbeat: a device that stops reporting every
-    // second expires to unknown via the expire_after above. Failed
-    // publishes are not cached by the library and retry on the next
-    // refresh by themselves.
+    // signal doubles as a heartbeat: a device quiet for HA_SENSOR_STALE_AFTER_S
+    // expires to unknown via the expire_after above. Failed publishes are
+    // not cached by the library and retry on the next refresh by
+    // themselves.
     bool critical = device.heap.freePercent() < HA_MIN_HEALTHY_HEAP_PERCENT
         || device.psram.freePercent() < HA_MIN_HEALTHY_PSRAM_PERCENT;
     deviceHealthSensor->setState(critical, true);
@@ -394,6 +388,10 @@ static void mqttStateChangedCallback(HAMqtt::ConnectionState state) {
 #pragma mark - Smart Hub callbacks
 
 static void smartHubButtonPressedCallback(const SmartHub::Endpoint endpoint, const SmartHub::Button *buttons, uint8_t count) {
+    // Any button packet (press or release) counts as remote activity and
+    // pauses metric reporting until the quiet period elapses.
+    lastButtonPressMillis = millis();
+
     // Copy of the previously pressed set. The incoming `buttons` array is
     // owned by the SmartHub stack frame, so only values may be retained.
     static SmartHub::Button lastButtons[MAX_PRESSED_BUTTON_COUNT];
